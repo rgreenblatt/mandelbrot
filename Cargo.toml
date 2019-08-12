@@ -1,0 +1,14 @@
+[package]
+name = "mandelbrot"
+version = "0.1.0"
+authors = ["Ryan Greenblatt <ryan_greenblatt@brown.edu>"]
+
+[dependencies]
+ndarray = "0.12"
+num = "0.2"
+terminal_size = "0.1"
+ndarray-parallel = "0.9"
+clap = "2.33"
+phf_macros = "0.7"
+phf = "0.7"
+hex = "0.3"
