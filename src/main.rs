@@ -19,7 +19,8 @@ use terminal_size::{terminal_size, Height, Width};
 
 /// ANSI background colour escapes.
 pub static ANSI_BG_COLOUR_ESCAPES: &'static [&'static str] = &[
-    "\x1B[40m", "\x1B[41m", "\x1B[42m", "\x1B[43m", "\x1B[44m", "\x1B[45m", "\x1B[46m", "\x1B[47m",
+    "\x1B[40m", "\x1B[41m", "\x1B[42m", "\x1B[43m", "\x1B[44m", "\x1B[45m",
+    "\x1B[46m", "\x1B[47m",
 ];
 pub static ANSI_RESET_ATTRIBUTES: &str = "\x1B[0m";
 
@@ -60,7 +61,8 @@ where
             .iter()
             .zip(axis_pair.slice(s![.., 0]).iter())
         {
-            let (upper, lower) = (value_to_color(*value_upper), value_to_color(*value_lower));
+            let (upper, lower) =
+                (value_to_color(*value_upper), value_to_color(*value_lower));
             print!(
                 "\x1B[38;2;{};{};{}m\
                  \x1B[48;2;{};{};{}m\u{2580}", // ▀
@@ -191,7 +193,9 @@ pub fn main() {
             }
             (colors[0], colors[1])
         }
-        None => match COLOR_MAP.get(matches.value_of("color_basic").unwrap_or("blue")) {
+        None => match COLOR_MAP
+            .get(matches.value_of("color_basic").unwrap_or("blue"))
+        {
             Some(v) => (default_min_color, *v),
             None => {
                 exit_error!(
@@ -223,54 +227,56 @@ pub fn main() {
             .collect::<Color>()
     };
 
-    let render_terminal =
-        |general_top_left: Complex32, general_bottom_right: Complex32, w: u16, h: u16| {
-            let effective_h = h as usize * 2;
-            let term_ratio = w as f32 / effective_h as f32;
+    let render_terminal = |general_top_left: Complex32,
+                           general_bottom_right: Complex32,
+                           w: u16,
+                           h: u16| {
+        let effective_h = h as usize * 2;
+        let term_ratio = w as f32 / effective_h as f32;
 
-            let diff_re = general_bottom_right.re - general_top_left.re;
-            let diff_im = general_top_left.im - general_bottom_right.im;
-            let ratio = diff_re / diff_im;
+        let diff_re = general_bottom_right.re - general_top_left.re;
+        let diff_im = general_top_left.im - general_bottom_right.im;
+        let ratio = diff_re / diff_im;
 
-            let (top_left, bottom_right) = if term_ratio > ratio {
-                let diff_re_delta_each = (diff_im * term_ratio - diff_re) / 2.0;
-                assert!(diff_re_delta_each >= 0.0);
-                (
-                    Complex32::new(
-                        general_top_left.re - diff_re_delta_each,
-                        general_top_left.im,
-                    ),
-                    Complex32::new(
-                        general_bottom_right.re + diff_re_delta_each,
-                        general_bottom_right.im,
-                    ),
-                )
-            } else {
-                let diff_im_delta_each = (diff_re / term_ratio - diff_im) / 2.0;
-                assert!(diff_im_delta_each >= 0.0);
+        let (top_left, bottom_right) = if term_ratio > ratio {
+            let diff_re_delta_each = (diff_im * term_ratio - diff_re) / 2.0;
+            assert!(diff_re_delta_each >= 0.0);
+            (
+                Complex32::new(
+                    general_top_left.re - diff_re_delta_each,
+                    general_top_left.im,
+                ),
+                Complex32::new(
+                    general_bottom_right.re + diff_re_delta_each,
+                    general_bottom_right.im,
+                ),
+            )
+        } else {
+            let diff_im_delta_each = (diff_re / term_ratio - diff_im) / 2.0;
+            assert!(diff_im_delta_each >= 0.0);
 
-                (
-                    Complex32::new(
-                        general_top_left.re,
-                        general_top_left.im + diff_im_delta_each,
-                    ),
-                    Complex32::new(
-                        general_bottom_right.re,
-                        general_bottom_right.im - diff_im_delta_each,
-                    ),
-                )
-            };
-
-            let result = mandelbrot(
-                top_left,
-                bottom_right,
-                Complex::<usize>::new(w as usize, h as usize * 2),
-                threshold,
-                max_iters,
-            );
-
-            write_ansi_truecolor(&result, value_to_color);
+            (
+                Complex32::new(
+                    general_top_left.re,
+                    general_top_left.im + diff_im_delta_each,
+                ),
+                Complex32::new(
+                    general_bottom_right.re,
+                    general_bottom_right.im - diff_im_delta_each,
+                ),
+            )
         };
+
+        let result = mandelbrot(
+            top_left,
+            bottom_right,
+            Complex::<usize>::new(w as usize, h as usize * 2),
+            threshold,
+            max_iters,
+        );
+
+        write_ansi_truecolor(&result, value_to_color);
+    };
 
     let (w, h);
     let render = if let Some((Width(w_found), Height(h_found))) = size {
@@ -313,38 +319,46 @@ pub fn main() {
         )
     };
 
-    let parse_float =
-        |arg_name, default| match matches.value_of(arg_name).unwrap_or(default).parse::<f32>() {
-            Ok(v) => v,
-            Err(e) => exit_error!(
-                "Failed to parse float (for arg {}) with error: {}",
-                arg_name,
-                e
-            ),
-        };
-
-    let render_zoom = |start_general_top_left: Complex32,
-                       start_general_bottom_right: Complex32,
-                       end_general_top_left: Complex32,
-                       end_general_bottom_right: Complex32| {
-        let diff_general_top_left = end_general_top_left - start_general_top_left;
-        let diff_general_bottom_right = end_general_bottom_right - start_general_bottom_right;
-
-        let zoom_time = parse_float("zoom_time", "5.0");
-        let zoom_fps = parse_float("zoom_fps", "10.0");
-        let time = 1.0 / zoom_fps;
-        let duration = std::time::Duration::from_millis((time * 1000.0) as u64);
-
-        let iters = (zoom_time * zoom_fps) as i32;
-        for iter in 0..iters {
-            let frac = iter as f32 / iters as f32;
-            let general_top_left = start_general_top_left + diff_general_top_left * frac;
-            let general_bottom_right =
-                start_general_bottom_right + diff_general_bottom_right * frac;
-            render(general_top_left, general_bottom_right);
-            std::thread::sleep(duration);
-        }
+    let parse_float = |arg_name, default| match matches
+        .value_of(arg_name)
+        .unwrap_or(default)
+        .parse::<f32>()
+    {
+        Ok(v) => v,
+        Err(e) => exit_error!(
+            "Failed to parse float (for arg {}) with error: {}",
+            arg_name,
+            e
+        ),
     };
+
+    let render_zoom =
+        |start_general_top_left: Complex32,
+         start_general_bottom_right: Complex32,
+         end_general_top_left: Complex32,
+         end_general_bottom_right: Complex32| {
+            let diff_general_top_left =
+                end_general_top_left - start_general_top_left;
+            let diff_general_bottom_right =
+                end_general_bottom_right - start_general_bottom_right;
+
+            let zoom_time = parse_float("zoom_time", "5.0");
+            let zoom_fps = parse_float("zoom_fps", "10.0");
+            let time = 1.0 / zoom_fps;
+            let duration =
+                std::time::Duration::from_millis((time * 1000.0) as u64);
+
+            let iters = (zoom_time * zoom_fps) as i32;
+            for iter in 0..iters {
+                let frac = iter as f32 / iters as f32;
+                let general_top_left =
+                    start_general_top_left + diff_general_top_left * frac;
+                let general_bottom_right = start_general_bottom_right
+                    + diff_general_bottom_right * frac;
+                render(general_top_left, general_bottom_right);
+                std::thread::sleep(duration);
+            }
+        };
 
     if matches.is_present("zoom") {
         let (start_general_top_left, start_general_bottom_right) =
@@ -358,7 +372,8 @@ pub fn main() {
             end_general_bottom_right,
         );
     } else {
-        let (general_top_left, general_bottom_right) = parse_bound("bounds", "-2.5,1.0,-1.2,1.2");
+        let (general_top_left, general_bottom_right) =
+            parse_bound("bounds", "-2.5,1.0,-1.2,1.2");
 
         render(general_top_left, general_bottom_right);
     }
