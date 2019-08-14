@@ -91,9 +91,9 @@ where
     let w = shape[0];
     let h = shape[1];
     let mut img_buf = image::ImageBuffer::new(w as u32, h as u32);
-    for ((x, y), value) in magnitudes.indexed_iter() {
-        *img_buf.get_pixel_mut(x as u32, y as u32) =
-            value_to_color(*value).to_image_rgb();
+
+    for (value, pixel) in magnitudes.iter().zip(img_buf.pixels_mut()) {
+        *pixel = value_to_color(*value).to_image_rgb();
     }
     img_buf.save(path)
 }
@@ -165,8 +165,6 @@ pub fn main() {
     let image_path_name = "image_path";
     let image_path_default = "mandelbrot.png";
 
-    // let arg_base = |name, help| Arg::with_name(name).long(name).help(help);
-    // let arg_takes_value = |name, help| arg_base(name, help).takes_value(true).value_name(name.to_uppercase());
     let construct_arg = |name, help, short, value_name_op| {
         let arg = Arg::with_name(name).long(name).help(help);
         let arg_if_takes_value = match value_name_op {
@@ -190,8 +188,8 @@ pub fn main() {
             120
         })
         .groups(&[
-            ArgGroup::with_name("bounding").args(&["bounds", "zoom"]),
-            ArgGroup::with_name("color").args(&["color_basic", "color_range"]),
+            ArgGroup::with_name("bounding").args(&[bounds_name, zoom_name]),
+            ArgGroup::with_name("color_group").args(&[color_basic_name, color_range_name]),
         ])
         .arg(construct_arg(
             bounds_name,
@@ -354,14 +352,20 @@ pub fn main() {
         .map(|(max, min)| max - min)
         .collect::<Vec<f32>>();
     let value_to_color = |value| {
-        let frac = value as f32 / max_iters as f32;
-        color_slope
-            .iter()
-            .zip(min_color.iter())
-            .map(|(color_slope_v, min_color_v)| {
-                ((color_slope_v * frac) as i32 + min_color_v as i32) as u8
-            })
-            .collect::<Color>()
+        if value == 0 {
+            min_color
+        } else if value == max_iters {
+            max_color
+        } else {
+            let frac = value as f32 / max_iters as f32;
+            color_slope
+                .iter()
+                .zip(min_color.iter())
+                .map(|(color_slope_v, min_color_v)| {
+                    ((color_slope_v * frac) as i32 + min_color_v as i32) as u8
+                })
+                .collect::<Color>()
+        }
     };
     let compute_mandelbrot_general =
         |general_top_left: Complex32,
