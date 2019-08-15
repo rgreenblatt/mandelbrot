@@ -60,11 +60,11 @@ pub fn write_ansi_truecolor<F>(magnitudes: &Array2<i32>, value_to_color: F)
 where
     F: Fn(i32) -> Color,
 {
-    for axis_pair in magnitudes.axis_chunks_iter(Axis(1), 2) {
+    for axis_pair in magnitudes.axis_chunks_iter(Axis(0), 2) {
         for (value_upper, value_lower) in axis_pair
-            .slice(s![.., 0])
+            .slice(s![0, ..])
             .iter()
-            .zip(axis_pair.slice(s![.., 0]).iter())
+            .zip(axis_pair.slice(s![1, ..]).iter())
         {
             let (upper, lower) =
                 (value_to_color(*value_upper), value_to_color(*value_lower));
@@ -88,8 +88,8 @@ where
     F: Fn(i32) -> Color,
 {
     let shape = magnitudes.shape();
-    let w = shape[0];
-    let h = shape[1];
+    let w = shape[1];
+    let h = shape[0];
     let mut img_buf = image::ImageBuffer::new(w as u32, h as u32);
 
     for (value, pixel) in magnitudes.iter().zip(img_buf.pixels_mut()) {
@@ -108,9 +108,9 @@ pub fn mandelbrot(
     let diff = bottom_right - top_left;
     let slope_re = diff.re / num_steps.re as f32;
     let slope_im = diff.im / num_steps.im as f32;
-    let mut out = Array2::<i32>::zeros((num_steps.re, num_steps.im));
+    let mut out = Array2::<i32>::zeros((num_steps.im, num_steps.re));
     let threshold_squared = threshold.powi(2);
-    Zip::indexed(&mut out).par_apply(|(index_re, index_im), iterations| {
+    Zip::indexed(&mut out).par_apply(|(index_im, index_re), iterations| {
         let c = Complex32::new(
             index_re as f32 * slope_re + top_left.re,
             index_im as f32 * slope_im + top_left.im,
@@ -189,7 +189,8 @@ pub fn main() {
         })
         .groups(&[
             ArgGroup::with_name("bounding").args(&[bounds_name, zoom_name]),
-            ArgGroup::with_name("color_group").args(&[color_basic_name, color_range_name]),
+            ArgGroup::with_name("color_group")
+                .args(&[color_basic_name, color_range_name]),
         ])
         .arg(construct_arg(
             bounds_name,
