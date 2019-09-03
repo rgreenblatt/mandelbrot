@@ -9,9 +9,9 @@ extern crate hex;
 extern crate mandelbrot;
 
 use clap::{App, Arg, ArgGroup};
+use mandelbrot::*;
 use num::complex::{Complex, Complex32};
 use terminal_size::{terminal_size, Height, Width};
-use mandelbrot::*;
 
 static COLOR_MAP: phf::Map<&'static str, Color> = phf_map! {
     "red" => Color {r: 255, g: 0, b: 0},
@@ -35,8 +35,9 @@ pub fn main() {
     let zoom_name = "zoom";
     let zoom_start_bound_name = "zoom_start_bound";
     let zoom_start_bound_default = "0.0,1.0,0.0,1.0";
-    let zoom_end_bound_name = "zoom_end_bound";
-    let zoom_end_bound_default = bounds_default;
+    let zoom_ratio_name = "zoom_ratio";
+    let zoom_ratio_default = "4";
+    let zoom_flip_name = "zoom_flip";
     let zoom_fps_name = "zoom_fps";
     let zoom_fps_default = "10";
     let zoom_time_name = "zoom_time";
@@ -99,10 +100,16 @@ pub fn main() {
             Some(&zoom_start_bound_name.to_uppercase()),
         ))
         .arg(construct_arg(
-            zoom_end_bound_name,
-            &format!("End zoom bound\nDefault: {}", zoom_end_bound_default),
+            zoom_ratio_name,
+            &format!("Zoom ratio\nDefault: {}", zoom_ratio_default),
             false,
-            Some(&zoom_end_bound_name.to_uppercase()),
+            Some(&zoom_ratio_name.to_uppercase()),
+        ))
+        .arg(construct_arg(
+            zoom_flip_name,
+            "Flips zoom order.",
+            false,
+            None,
         ))
         .arg(construct_arg(
             zoom_fps_name,
@@ -435,33 +442,44 @@ pub fn main() {
         ),
     };
 
-    let render_zoom =
-        |start_general_top_left: Complex32,
-         start_general_bottom_right: Complex32,
-         end_general_top_left: Complex32,
-         end_general_bottom_right: Complex32| {
-            let diff_general_top_left =
-                end_general_top_left - start_general_top_left;
-            let diff_general_bottom_right =
-                end_general_bottom_right - start_general_bottom_right;
+    let render_zoom = |start_general_top_left: Complex32,
+                       start_general_bottom_right: Complex32,
+                       ratio: f32| {
+        fn elementwise_op_c_r<F>(
+            left: Complex32,
+            right: f32,
+            mut apply: F,
+        ) -> Complex32
+        where
+            F: FnMut(f32, f32) -> f32,
+        {
+            Complex32::new(apply(left.re, right), apply(left.im, right))
+        }
+        let zoom_time = parse_float(zoom_time_name, zoom_time_default);
+        let zoom_fps = parse_float(zoom_fps_name, zoom_fps_default);
+        let time = 1.0 / zoom_fps;
+        let duration = std::time::Duration::from_millis((time * 1000.0) as u64);
+        let half_diff = elementwise_op_c_r(
+            start_general_bottom_right - start_general_top_left,
+            2.0,
+            std::ops::Div::div,
+        );
+        let mid_point = start_general_top_left + half_diff;
 
-            let zoom_time = parse_float(zoom_time_name, zoom_time_default);
-            let zoom_fps = parse_float(zoom_fps_name, zoom_fps_default);
-            let time = 1.0 / zoom_fps;
-            let duration =
-                std::time::Duration::from_millis((time * 1000.0) as u64);
+        let flip = matches.is_present(zoom_flip_name);
 
-            let iters = (zoom_time * zoom_fps) as i32;
-            for iter in 0..iters {
-                let frac = iter as f32 / iters as f32;
-                let general_top_left =
-                    start_general_top_left + diff_general_top_left * frac;
-                let general_bottom_right = start_general_bottom_right
-                    + diff_general_bottom_right * frac;
-                render(general_top_left, general_bottom_right);
-                std::thread::sleep(duration);
-            }
-        };
+        let iters = (zoom_time * zoom_fps) as i32;
+        for iter in 0..iters {
+            let frac = iter as f32 / (iters - 1) as f32;
+            let frac = if flip {1.0 - frac }else {frac};
+            let iter_diff = half_diff * ratio.powf(frac);
+            let general_top_left = mid_point - iter_diff;
+            let general_bottom_right = mid_point + iter_diff;
+
+            render(general_top_left, general_bottom_right);
+            std::thread::sleep(duration);
+        }
+    };
 
     let parse_bound = |arg_name, default| {
         let bound_values =
@@ -475,13 +493,11 @@ pub fn main() {
     if matches.is_present(zoom_name) {
         let (start_general_top_left, start_general_bottom_right) =
             parse_bound(zoom_start_bound_name, zoom_start_bound_default);
-        let (end_general_top_left, end_general_bottom_right) =
-            parse_bound(zoom_end_bound_name, zoom_end_bound_default);
+        let zoom_ratio = parse_float(zoom_ratio_name, zoom_ratio_default);
         render_zoom(
             start_general_top_left,
             start_general_bottom_right,
-            end_general_top_left,
-            end_general_bottom_right,
+            zoom_ratio,
         );
     } else {
         let (general_top_left, general_bottom_right) =
